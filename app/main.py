@@ -157,7 +157,9 @@ def get_local_idx_by_title(title: str) -> int:
     return TITLE_TO_IDX[key]
 
 
-def tfidf_recommend_titles(query_title: str, top_n: int = 10) -> List[Tuple[str, float]]:
+def tfidf_recommend_titles(
+    query_title: str, top_n: int = 10, genre_filter: Optional[str] = None
+) -> List[Tuple[str, float]]:
     if df is None or tfidf_matrix is None:
         raise HTTPException(status_code=500, detail="TF-IDF data not initialized")
 
@@ -171,13 +173,41 @@ def tfidf_recommend_titles(query_title: str, top_n: int = 10) -> List[Tuple[str,
         if int(i) == int(idx):
             continue
         try:
-            title_i = str(df.iloc[int(i)]["title"])
+            row = df.iloc[int(i)]
+            title_i = str(row["title"])
         except Exception:
+            continue
+        if genre_filter and genre_filter.lower() not in str(row.get("genres", "")).lower():
             continue
         out.append((title_i, float(scores[int(i)])))
         if len(out) >= top_n:
             break
     return out
+
+
+def get_movie_row(title: str) -> Optional[Dict[str, Any]]:
+    """Local dataset row (overview/genres/tagline/etc.) for a given title, if present."""
+    if df is None:
+        return None
+    try:
+        idx = get_local_idx_by_title(title)
+    except HTTPException:
+        return None
+    row = df.iloc[int(idx)]
+    return {
+        "overview": row.get("overview", ""),
+        "genres": row.get("genres", ""),
+        "tagline": row.get("tagline", ""),
+        "vote_average": row.get("vote_average"),
+        "popularity": row.get("popularity"),
+    }
+
+
+COMMON_GENRES = [
+    "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary",
+    "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery",
+    "Romance", "Science Fiction", "Thriller", "War", "Western",
+]
 
 
 async def attach_tmdb_card_by_title(title: str) -> Optional[TMDBMovieCard]:
