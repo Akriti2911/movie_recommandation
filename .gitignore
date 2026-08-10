@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Raw dataset is large and not redistributed via this repo — see data/README.md
+data/movies_metadata.csv
+
+.DS_Store
