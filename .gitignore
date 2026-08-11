@@ -3,8 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
-
-# Raw dataset is large and not redistributed via this repo — see data/README.md
 data/movies_metadata.csv
-
+data/TMDB_all_movies.csv
+data/new_movies.csv
 .DS_Store

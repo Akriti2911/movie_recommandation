@@ -11,10 +11,14 @@ import asyncio
 import streamlit as st
 
 from main import (
+    COMMON_GENRES,
     TMDB_API_KEY,
     attach_tmdb_card_by_title,
+    get_movie_row,
     load_pickles,
     tfidf_recommend_titles,
+    tmdb_cards_from_results,
+    tmdb_get,
 )
 
 st.set_page_config(page_title="CineMatch", page_icon="🎬", layout="wide")
@@ -134,6 +138,48 @@ def fetch_poster(title: str):
         return None
 
 
+@st.cache_data(show_spinner=False, ttl=3600)
+def fetch_trending(limit: int = 10):
+    if not TMDB_API_KEY:
+        return []
+    try:
+        data = run_async(tmdb_get("/trending/movie/day", {"language": "en-US"}))
+        cards = run_async(tmdb_cards_from_results(data.get("results", []), limit=limit))
+        return cards
+    except Exception:
+        return []
+
+
+def render_movie_card(title: str, poster_url, badge: str, key_prefix: str):
+    poster_html = (
+        f'<img class="movie-poster" src="{poster_url}">'
+        if poster_url
+        else '<div class="movie-poster-placeholder">🎬</div>'
+    )
+    st.markdown(
+        f"""
+        <div class="movie-card">
+            {poster_html}
+            <div class="movie-info">
+                <div class="movie-title">{title}</div>
+                <span class="movie-score">{badge}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    row = get_movie_row(title)
+    if row and (row.get("overview") or row.get("tagline")):
+        with st.expander("Details", expanded=False):
+            if row.get("tagline"):
+                st.markdown(f"*{row['tagline']}*")
+            if row.get("genres"):
+                st.caption(row["genres"])
+            if row.get("overview"):
+                st.write(row["overview"])
+    st.markdown("<div style='height: 1rem'></div>", unsafe_allow_html=True)
+
+
 # ---------- Hero ----------
 st.markdown(
     """
@@ -152,6 +198,23 @@ if not TMDB_API_KEY:
         icon="ℹ️",
     )
 
+# ---------- Trending Now ----------
+if TMDB_API_KEY:
+    trending = fetch_trending(limit=10)
+    if trending:
+        st.markdown("### 🔥 Trending now")
+        cols = st.columns(5)
+        for i, card in enumerate(trending):
+            with cols[i % 5]:
+                render_movie_card(
+                    card.title,
+                    card.poster_url,
+                    f"⭐ {card.vote_average:.1f}" if card.vote_average else "",
+                    key_prefix=f"trend-{i}",
+                )
+        st.markdown("---")
+
+# ---------- Search ----------
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
     query = st.text_input(
@@ -159,13 +222,15 @@ with col2:
         placeholder="e.g. Toy Story, The Dark Knight, Inception...",
         label_visibility="collapsed",
     )
+    genre_choice = st.selectbox("Filter by genre (optional)", ["Any genre"] + COMMON_GENRES)
     top_n = st.slider("Number of recommendations", min_value=5, max_value=20, value=10)
     go = st.button("🔍 Find similar movies", type="primary", use_container_width=True)
 
 if go and query:
+    genre_filter = None if genre_choice == "Any genre" else genre_choice
     with st.spinner("Finding similar movies..."):
         try:
-            recs = tfidf_recommend_titles(query, top_n=top_n)
+            recs = tfidf_recommend_titles(query, top_n=top_n, genre_filter=genre_filter)
         except Exception as e:
             recs = None
             st.error(str(e))
@@ -176,25 +241,11 @@ if go and query:
         for i, (title, score) in enumerate(recs):
             poster_url = fetch_poster(title)
             with cols[i % 5]:
-                poster_html = (
-                    f'<img class="movie-poster" src="{poster_url}">'
-                    if poster_url
-                    else '<div class="movie-poster-placeholder">🎬</div>'
-                )
-                st.markdown(
-                    f"""
-                    <div class="movie-card">
-                        {poster_html}
-                        <div class="movie-info">
-                            <div class="movie-title">{title}</div>
-                            <span class="movie-score">match {score:.0%}</span>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.markdown("<div style='height: 1rem'></div>", unsafe_allow_html=True)
+                render_movie_card(title, poster_url, f"match {score:.0%}", key_prefix=f"rec-{i}")
     elif recs == []:
-        st.warning("No recommendations found.")
+        msg = "No recommendations found."
+        if genre_filter:
+            msg += f" Try removing the '{genre_filter}' genre filter."
+        st.warning(msg)
 elif go and not query:
     st.warning("Type a movie title first.")

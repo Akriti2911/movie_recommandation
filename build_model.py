@@ -20,6 +20,7 @@ from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 DATA_PATH = os.path.join("data", "movies_metadata.csv")
+NEW_MOVIES_PATH = os.path.join("data", "new_movies.csv")
 MODEL_DIR = os.path.join("app", "model")
 
 nltk.download("stopwords", quiet=True)
@@ -30,12 +31,21 @@ LEMMATIZER = WordNetLemmatizer()
 
 
 def parse_genres(raw: str) -> str:
-    """Turn the stringified list-of-dicts genres column into a plain string."""
-    try:
-        items = ast.literal_eval(raw)
-        return " ".join(i["name"] for i in items)
-    except (ValueError, SyntaxError):
-        return ""
+    """Turn the genres column into a plain space-separated string of names.
+
+    Handles two formats:
+    - Kaggle's stringified list-of-dicts, e.g. "[{'id': 16, 'name': 'Comedy'}]"
+    - Plain space-separated names already, e.g. "Comedy Drama" (from
+      prepare_dataset.py / fetch_recent_movies.py) — passed through as-is.
+    """
+    s = str(raw).strip()
+    if s.startswith("["):
+        try:
+            items = ast.literal_eval(s)
+            return " ".join(i["name"] for i in items)
+        except (ValueError, SyntaxError):
+            return ""
+    return s
 
 
 def preprocess_text(text: str) -> str:
@@ -50,13 +60,28 @@ def preprocess_text(text: str) -> str:
 def main():
     print(f"Loading {DATA_PATH} ...")
     df = pd.read_csv(DATA_PATH, low_memory=False)
+    df = df[["title", "overview", "genres", "tagline", "vote_average", "popularity"]]
+    df["genres"] = df["genres"].apply(parse_genres)  # raw stringified list-of-dicts -> plain names
+
+    if os.path.exists(NEW_MOVIES_PATH):
+        print(f"Loading {NEW_MOVIES_PATH} (recent TMDB pulls) ...")
+        new_df = pd.read_csv(NEW_MOVIES_PATH)
+        new_df["genres"] = new_df["genres"].fillna("")  # already plain strings, no parsing needed
+        existing_titles = set(df["title"].dropna())
+        genuinely_new = new_df[~new_df["title"].isin(existing_titles)]
+        df = pd.concat([df, new_df], ignore_index=True)
+        df = df.drop_duplicates(subset=["title"], keep="first")
+        print(f"Added {len(genuinely_new)} genuinely new titles from {NEW_MOVIES_PATH}.")
 
     df = df.drop_duplicates().reset_index(drop=True)
-    df = df[["title", "overview", "genres", "tagline", "vote_average", "popularity"]]
     df = df.dropna(subset=["title"])
     df["overview"] = df["overview"].fillna("")
     df["tagline"] = df["tagline"].fillna("")
-    df["genres"] = df["genres"].apply(parse_genres)
+
+    df = df.drop_duplicates().reset_index(drop=True)
+    df = df.dropna(subset=["title"])
+    df["overview"] = df["overview"].fillna("")
+    df["tagline"] = df["tagline"].fillna("")
 
     df["tags"] = df["overview"] + " " + df["genres"] + " " + df["tagline"]
     df["tags"] = df["tags"].apply(preprocess_text)
