@@ -19,7 +19,7 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-DATA_PATH = os.path.join("data", "movies_metadata.csv")
+DATA_PATH = os.path.join("data", "TMDB_all_movies")
 NEW_MOVIES_PATH = os.path.join("data", "new_movies.csv")
 MODEL_DIR = os.path.join("app", "model")
 
