@@ -24,18 +24,35 @@ def main():
     parser.add_argument("--source", required=True, help="Path to the full TMDB dump CSV")
     parser.add_argument("--out", default=os.path.join("data", "movies_metadata.csv"))
     parser.add_argument("--min-votes", type=int, default=10, help="Minimum vote_count to keep a movie")
+    parser.add_argument(
+        "--boost-languages",
+        default="hi",
+        help="Comma-separated ISO 639-1 codes (e.g. 'hi' for Hindi/Bollywood) that get a lower "
+        "vote threshold, since non-Hollywood industries are systematically under-voted on TMDB "
+        "relative to their actual popularity. Empty string disables boosting.",
+    )
+    parser.add_argument("--boost-min-votes", type=int, default=3, help="Vote threshold for boosted languages")
     parser.add_argument("--chunksize", type=int, default=200_000)
     args = parser.parse_args()
 
-    cols_needed = ["title", "overview", "genres", "tagline", "vote_average", "popularity", "vote_count", "status"]
+    boost_langs = {c.strip() for c in args.boost_languages.split(",") if c.strip()}
+    cols_needed = [
+        "title", "overview", "genres", "tagline", "vote_average", "popularity",
+        "vote_count", "status", "original_language",
+    ]
 
     print(f"Reading {args.source} in chunks of {args.chunksize} ...")
+    if boost_langs:
+        print(f"Boosting languages {boost_langs} down to vote_count >= {args.boost_min_votes}")
     kept_chunks = []
     total_seen = 0
     for chunk in pd.read_csv(args.source, usecols=cols_needed, chunksize=args.chunksize, low_memory=False):
         total_seen += len(chunk)
         chunk = chunk[chunk["status"] == "Released"]
-        chunk = chunk[chunk["vote_count"].fillna(0) >= args.min_votes]
+        votes = chunk["vote_count"].fillna(0)
+        is_boosted = chunk["original_language"].isin(boost_langs)
+        keep_mask = (votes >= args.min_votes) | (is_boosted & (votes >= args.boost_min_votes))
+        chunk = chunk[keep_mask]
         chunk = chunk.dropna(subset=["title"])
         chunk = chunk[chunk["title"].astype(str).str.strip() != ""]
         if len(chunk):

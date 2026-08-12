@@ -3,7 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
-data/movies_metadata.csv
+
 data/TMDB_all_movies.csv
-data/new_movies.csv
+
 .DS_Store
